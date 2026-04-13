@@ -1,0 +1,12 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Encoded GCode files and companion DBs land here.
+      # Mount a local directory so you can copy them to your OctoPrint server.
+      - ./data:/data
+    environment:
+      - INFILLCODE_DATA_DIR=/data
+    restart: unless-stopped

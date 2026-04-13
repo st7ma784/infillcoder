@@ -1,0 +1,7 @@
+# Standalone build configuration for the OctoPrint plugin.
+# This file prevents the repo-root pyproject.toml from being
+# picked up when pip/setuptools is invoked from this subdirectory.
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,184 @@
+/* InfillCode OctoPrint sidebar styles */
+
+#infillcode_sidebar {
+  font-size: 0.85em;
+}
+
+#infillcode_status {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+}
+
+/* State colours */
+#infillcode_status.infillcode-pending {
+  background: #f8f9fa;
+  border-color: #dee2e6;
+  color: #6c757d;
+}
+
+#infillcode_status.infillcode-ok {
+  background: #f0fff4;
+  border-color: #68d391;
+}
+
+#infillcode_status.infillcode-resume-ready {
+  background: #fffbeb;
+  border-color: #f6ad55;
+}
+
+#infillcode_status.infillcode-error {
+  background: #fff5f5;
+  border-color: #fc8181;
+  color: #c53030;
+}
+
+.infillcode-label {
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+.infillcode-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+}
+
+.infillcode-table th {
+  text-align: left;
+  color: #555;
+  padding: 2px 6px 2px 0;
+  white-space: nowrap;
+  width: 40%;
+}
+
+.infillcode-table td {
+  padding: 2px 0;
+  word-break: break-all;
+}
+
+.infillcode-resume {
+  margin-top: 8px;
+}
+
+.infillcode-resume strong {
+  color: #c05621;
+}
+
+.infillcode-filename {
+  font-family: monospace;
+  font-size: 0.9em;
+}
+
+.infillcode-hint {
+  font-size: 0.82em;
+  color: #666;
+  margin-top: 6px;
+  font-style: italic;
+}
+
+.infillcode-error-inline {
+  margin-top: 6px;
+  color: #c53030;
+  font-size: 0.85em;
+}
+
+/* ── Auto-process notification ──────────────────────────────────────── */
+
+.infillcode-notify {
+  background: #ebf8ff;
+  border: 1px solid #63b3ed;
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  font-size: 0.82em;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.infillcode-dismiss {
+  cursor: pointer;
+  font-weight: bold;
+  color: #2b6cb0;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Startup bed scan ────────────────────────────────────────────────── */
+
+.infillcode-startup-banner {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  margin-bottom: 6px;
+  font-size: 0.85em;
+}
+
+.infillcode-startup-found {
+  background: #fffbeb;
+  border-color: #f6ad55;
+}
+
+.infillcode-startup-clear {
+  background: #f0fff4;
+  border-color: #68d391;
+  color: #276749;
+}
+
+/* ── Mid-print live check ────────────────────────────────────────────── */
+
+.infillcode-livecheck {
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 0.82em;
+  margin-bottom: 6px;
+}
+
+.infillcode-check-ok {
+  background: #f0fff4;
+  border: 1px solid #68d391;
+  color: #276749;
+}
+
+.infillcode-check-fail {
+  background: #fff5f5;
+  border: 1px solid #fc8181;
+  color: #c53030;
+  font-weight: bold;
+}
+
+.infillcode-livecheck-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* Health score badge */
+.infillcode-health-score {
+  white-space: nowrap;
+  font-size: 0.9em;
+}
+
+.infillcode-health-good strong { color: #276749; }
+.infillcode-health-warn strong { color: #c05621; }
+.infillcode-health-bad  strong { color: #c53030; }
+
+/* Dot trail */
+.infillcode-dots {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.infillcode-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.infillcode-dot-pass { background: #68d391; }
+.infillcode-dot-fail { background: #fc8181; }

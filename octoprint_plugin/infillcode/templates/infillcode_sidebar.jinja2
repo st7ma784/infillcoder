@@ -1,0 +1,102 @@
+<div id="infillcode_sidebar">
+
+  <!-- ── Auto-process notification ───────────────────────────────────── -->
+  <div data-bind="visible: autoProcessMsg" class="infillcode-notify" id="infillcode_autoprocess">
+    <span data-bind="text: autoProcessMsg"></span>
+    <span class="infillcode-dismiss" data-bind="click: dismissAutoProcess">&times;</span>
+  </div>
+
+  <!-- ── Startup bed scan ─────────────────────────────────────────────── -->
+  <div data-bind="visible: startupScan" id="infillcode_startup">
+    <div data-bind="css: startupScanClass" class="infillcode-startup-banner">
+      <strong data-bind="text: startupScanTitle"></strong>
+      <div data-bind="visible: startupScan() && startupScan().found">
+        <table class="infillcode-table">
+          <tr><th>File</th><td data-bind="text: startupScan() && startupScan().filename"></td></tr>
+          <tr><th>Layer</th><td data-bind="text: startupScan() && (startupScan().layer_idx + ' / ' + startupScan().total_layers)"></td></tr>
+          <tr><th>Progress</th><td data-bind="text: startupScan() && startupScan().pct_complete + '%'"></td></tr>
+        </table>
+        <!-- Resume ready after startup scan -->
+        <div data-bind="visible: startupScan() && startupScan().resume_file" class="infillcode-resume">
+          <hr/>
+          <strong>Resume GCode ready</strong>
+          <table class="infillcode-table">
+            <tr><th>Resume from</th><td data-bind="text: startupScan() && 'Layer ' + startupScan().resume_layer_idx"></td></tr>
+            <tr><th>Layers left</th><td data-bind="text: startupScan() && startupScan().layers_remaining"></td></tr>
+            <tr><th>File</th><td data-bind="text: startupScan() && startupScan().resume_file" class="infillcode-filename"></td></tr>
+          </table>
+          <button class="btn btn-small btn-warning"
+                  data-bind="click: queueStartupResume">
+            Queue &amp; Print Resume
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Mid-print validation status + health score ──────────────────── -->
+  <div data-bind="visible: fingerprintCheckMsg" id="infillcode_livecheck">
+    <div data-bind="css: fingerprintCheckClass" class="infillcode-livecheck">
+      <div class="infillcode-livecheck-row">
+        <span data-bind="text: fingerprintCheckMsg"></span>
+        <span data-bind="visible: healthScore() != null"
+              class="infillcode-health-score"
+              data-bind2="css: healthScoreClass">
+          Health: <strong data-bind="text: healthScore() != null ? healthScore() + '%' : ''"></strong>
+        </span>
+      </div>
+      <!-- Dot trail: one dot per recent check, green=pass, red=fail -->
+      <div data-bind="visible: healthHistory().length > 0" class="infillcode-dots">
+        <!-- ko foreach: healthHistory -->
+        <span data-bind="css: $data ? 'infillcode-dot-pass' : 'infillcode-dot-fail'"
+              class="infillcode-dot"></span>
+        <!-- /ko -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Post-print / main status ─────────────────────────────────────── -->
+  <div id="infillcode_status" data-bind="css: statusClass">
+    <p class="infillcode-label" data-bind="text: statusLabel">Waiting for print event…</p>
+
+    <!-- Layer identification result -->
+    <div data-bind="visible: layerInfo">
+      <table class="infillcode-table">
+        <tr><th>File</th><td data-bind="text: layerInfo() && layerInfo().filename"></td></tr>
+        <tr><th>Layer</th><td data-bind="text: layerInfo() && (layerInfo().layer_idx + ' / ' + layerInfo().total_layers)"></td></tr>
+        <tr><th>Z height</th><td data-bind="text: layerInfo() && layerInfo().z_height_mm + ' mm'"></td></tr>
+        <tr><th>Progress</th><td data-bind="text: layerInfo() && layerInfo().pct_complete + '%'"></td></tr>
+        <tr><th>Filament used</th><td data-bind="text: layerInfo() && (layerInfo().cumulative_e_mm ? layerInfo().cumulative_e_mm.toFixed(1) + ' mm' : '—')"></td></tr>
+      </table>
+
+      <!-- Resume section (only shown after PrintFailed) -->
+      <div data-bind="visible: resumeInfo" class="infillcode-resume">
+        <hr/>
+        <strong>Resume GCode ready</strong>
+        <table class="infillcode-table">
+          <tr><th>Resume from</th><td data-bind="text: resumeInfo() && 'Layer ' + resumeInfo().resume_layer_idx"></td></tr>
+          <tr><th>Z</th><td data-bind="text: resumeInfo() && resumeInfo().resume_z_mm + ' mm'"></td></tr>
+          <tr><th>Layers left</th><td data-bind="text: resumeInfo() && resumeInfo().layers_remaining"></td></tr>
+          <tr><th>File</th><td data-bind="text: resumeInfo() && resumeInfo().resume_file" class="infillcode-filename"></td></tr>
+        </table>
+        <p class="infillcode-hint">Clear the bed, then:</p>
+        <button class="btn btn-small btn-warning"
+                data-bind="click: queueResume">
+          Queue &amp; Print Resume
+        </button>
+      </div>
+
+      <!-- Resume error -->
+      <div data-bind="visible: resumeError" class="infillcode-error-inline">
+        <hr/>
+        <span>Resume error: </span><span data-bind="text: resumeError"></span>
+      </div>
+    </div>
+
+    <!-- Error state -->
+    <div data-bind="visible: errorMsg" class="infillcode-error-inline">
+      <span data-bind="text: errorMsg"></span>
+    </div>
+  </div>
+
+</div>

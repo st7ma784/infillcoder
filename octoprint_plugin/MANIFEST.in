@@ -1,0 +1,9 @@
+# Include the plugin package
+recursive-include infillcode *.py *.jinja2 *.js *.css
+
+# Include the shared core library (bundled into the distribution)
+recursive-include ../core *.py
+
+# Include top-level files from the repo root
+include ../README.md
+include ../LICENSE

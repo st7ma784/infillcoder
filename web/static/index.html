@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>InfillCode — GCode Layer Fingerprinting</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <header>
+    <h1>InfillCode</h1>
+    <p class="subtitle">Embed per-layer barcodes into infill line spacing for failure recovery</p>
+  </header>
+
+  <main>
+    <!-- Upload zone -->
+    <section id="upload-section">
+      <div id="drop-zone" role="button" tabindex="0" aria-label="Upload GCode file">
+        <div class="drop-icon">&#8679;</div>
+        <p>Drag &amp; drop a <code>.gcode</code> file here</p>
+        <p>or</p>
+        <label class="btn" for="file-input">Browse…</label>
+        <input id="file-input" type="file" accept=".gcode,.gco,.g" hidden/>
+      </div>
+    </section>
+
+    <!-- Job status -->
+    <section id="status-section" hidden>
+      <div id="status-card">
+        <h2 id="status-filename"></h2>
+        <div id="progress-bar-wrapper">
+          <div id="progress-bar"></div>
+        </div>
+        <p id="status-text">Queued…</p>
+        <div id="stats-grid" hidden>
+          <div class="stat"><span id="stat-total">–</span><label>Layers</label></div>
+          <div class="stat"><span id="stat-encoded">–</span><label>Encoded</label></div>
+          <div class="stat"><span id="stat-skipped">–</span><label>Skipped</label></div>
+          <div class="stat"><span id="stat-spacing">–</span><label>Spacing (mm)</label></div>
+        </div>
+        <div id="download-btns" hidden>
+          <a id="dl-gcode" class="btn" download>Download GCode</a>
+          <a id="dl-db"    class="btn secondary" download>Download DB</a>
+        </div>
+      </div>
+
+      <!-- Per-layer table -->
+      <div id="table-wrapper" hidden>
+        <h3>Layer details</h3>
+        <table id="layer-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Z (mm)</th>
+              <th>Lines</th>
+              <th>Encoded</th>
+              <th>Skipped reason</th>
+              <th>E used (mm)</th>
+            </tr>
+          </thead>
+          <tbody id="layer-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="error-section" hidden>
+      <div id="error-card">
+        <h2>Encoding failed</h2>
+        <pre id="error-text"></pre>
+        <button class="btn" id="error-reset">Try again</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
