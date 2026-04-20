@@ -21,6 +21,10 @@ htmlcov/
 # Docs build
 docs/_build/
 
+# Stale editable-install artefacts
+octoprint_plugin/core/
+octoprint_plugin/infillcode/_bundled_core/
+
 # OctoPrint local data
 *.db
 *.sqlite

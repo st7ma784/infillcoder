@@ -44,6 +44,12 @@ Infill line spacing is modulated slightly (±25 % of nominal spacing) to encode 
 
 See the [full documentation](https://st7ma784.github.io/infillcoder/) for the encoding scheme, API reference, and deployment guide.
 
+## Support & Donations
+
+If you find InfillCode useful, please consider supporting the project:
+
+[![Donate with PayPal](/assets/paypal-donate.svg)](https://www.paypal.com/donate/?business=FM3XGWAZJNGXU&no_recurring=0&currency_code=GBP)
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

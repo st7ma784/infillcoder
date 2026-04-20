@@ -1,0 +1,21 @@
+/* InfillCode — minor style tweaks on top of Furo */
+
+/* Slightly wider content column on large screens */
+@media (min-width: 1200px) {
+    .wy-nav-content {
+        max-width: 1000px;
+    }
+}
+
+/* Monospace pill for inline code in Furo */
+code.literal {
+    font-size: 0.88em;
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+}
+
+/* Muted caption text below code blocks */
+.code-block-caption {
+    font-size: 0.82em;
+    opacity: 0.75;
+}
