@@ -94,12 +94,12 @@ def test_resume_z_matches_layer():
 
 
 def test_resume_z_hop_applied():
-    """The hop Z in the init sequence should be resume_z + z_hop_mm."""
+    """Z hop uses G91 relative move so the hop distance is z_hop_mm exactly."""
     gcode = _load("sample_marlin.gcode")
     z_hop = 2.5
     result = build_resume_gcode(gcode, last_good_layer_idx=0, z_hop_mm=z_hop)
-    expected_hop = round(result.resume_z_mm + z_hop, 4)
-    assert f"G1 Z{expected_hop}" in result.resume_gcode
+    assert "G91" in result.resume_gcode
+    assert f"G1 Z{z_hop:.3f}" in result.resume_gcode
 
 
 def test_resume_error_on_out_of_range():

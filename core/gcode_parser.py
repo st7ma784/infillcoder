@@ -49,7 +49,7 @@ class LayerRecord:
     z_height_mm: float
     moves: List[Move] = field(default_factory=list)
     cumulative_e_mm: float = 0.0
-    time_estimate_s: Optional[int] = None
+    infill_end_e_mm: Optional[float] = None  # E position after the last infill move
 
     @property
     def infill_moves(self) -> List[Move]:
@@ -77,14 +77,12 @@ _G0_G1 = re.compile(
     re.IGNORECASE,
 )
 
-# Slicer layer number comments:  ;LAYER:N  ;layer N  ;Layer N,
-_LAYER_NUM_COMMENT = re.compile(
-    r";(?:LAYER|layer)[:\s]+(\d+)"   # ;LAYER:N or ;layer N
-    r"|;Layer\s+(\d+),",             # ;Layer 42, ... (Simplify3D)
-    re.IGNORECASE,
-)
+# Matches ;LAYER:N (Marlin/Cura), ;layer N, ;Layer N, (Simplify3D).
+# Single capture group — the second alternative in the old regex was a subset
+# of the first once re.IGNORECASE is applied.
+_LAYER_NUM_COMMENT = re.compile(r";LAYER[:\s]+(\d+)", re.IGNORECASE)
 
-# Z-value comments: ;Z:14.2  ;HEIGHT:14.2  used by Klipper / SuperSlicer
+# Z-value comments: ;Z:14.2  used by Klipper / SuperSlicer
 _Z_COMMENT = re.compile(r";Z:([\d.]+)", re.IGNORECASE)
 
 # Slicer type comments
@@ -125,7 +123,7 @@ def parse_gcode(text: str) -> Tuple[List[LayerRecord], float]:
     """
     lines_text = text.splitlines()
 
-    # ── Pre-scan: detect whether the file uses explicit layer comments ──────
+    # Pre-scan: detect whether the file uses explicit layer comments
     has_layer_comments = any(
         _LAYER_NUM_COMMENT.search(ln) or _Z_COMMENT.search(ln)
         for ln in lines_text
@@ -159,10 +157,10 @@ def parse_gcode(text: str) -> Tuple[List[LayerRecord], float]:
             move_type = MoveType.EXTRUDE
             continue
 
-        # ---- layer-number comment (;LAYER:N, ;Layer N,) ----
+        # ---- layer-number comment ----
         m = _LAYER_NUM_COMMENT.search(line)
         if m:
-            new_idx = int(m.group(1) or m.group(2))
+            new_idx = int(m.group(1))
             _flush_layer(layers, current_layer, ce)
             current_layer = LayerRecord(layer_idx=new_idx, z_height_mm=cz)
             layer_idx = new_idx + 1
@@ -221,14 +219,11 @@ def parse_gcode(text: str) -> Tuple[List[LayerRecord], float]:
         # Z change handling
         if nz != cz and nz > cz:
             if not has_layer_comments:
-                # No layer comments: use Z moves to delimit layers
                 _flush_layer(layers, current_layer, ce)
                 current_layer = LayerRecord(layer_idx=layer_idx, z_height_mm=nz)
                 layer_idx += 1
                 move_type = MoveType.EXTRUDE
             elif current_layer is not None and not current_layer.extrude_moves:
-                # Layer comment was just seen but no extrude moves yet:
-                # update the layer's Z to match the actual G1 Z move that follows
                 current_layer.z_height_mm = nz
             cz = nz
 
@@ -266,9 +261,12 @@ def parse_gcode(text: str) -> Tuple[List[LayerRecord], float]:
                 )
             )
 
+            # Track E position at end of last infill move
+            if mtype == MoveType.INFILL:
+                current_layer.infill_end_e_mm = ce
+
         cx, cy = nx, ny
 
-    # Flush last layer
     _flush_layer(layers, current_layer, ce)
 
     return layers, 0.0

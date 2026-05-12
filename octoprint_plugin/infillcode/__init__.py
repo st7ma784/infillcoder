@@ -1,34 +1,4 @@
-"""
-InfillCode OctoPrint Plugin
-
-Mixins: SettingsPlugin, AssetPlugin, TemplatePlugin,
-        EventHandlerPlugin, SimpleApiPlugin,
-        StartupPlugin, ProgressPlugin
-
-Workflow features
------------------
-1. Auto-process .aw.gcode uploads – any file whose name ends with
-   ``.aw.gcode`` is automatically run through the InfillCode encode
-   pipeline; the result is saved as ``.gcode`` alongside the original.
-
-2. Startup bed scan – 15 s after OctoPrint starts, a webcam snapshot
-   is taken and decoded.  If a fingerprint is found the sidebar shows
-   the interrupted print and (when auto_resume is on) offers a resume
-   file.
-
-3. Mid-print fingerprint validation – every N % of print progress a
-   snapshot is taken and decoded.  A mismatch or failure is surfaced
-   as a warning so the operator can intervene early.
-
-4. One-click resume – the sidebar "Queue Resume" button selects and
-   starts the generated resume file without leaving the page.
-
-On PrintFailed / PrintDone / PrintCancelled:
-  1. Download webcam snapshot.
-  2. Run vision pipeline → decoder → DB lookup.
-  3. Send layer info to the sidebar via plugin message.
-  4. If PrintFailed: generate remainder GCode and save to uploads folder.
-"""
+"""InfillCode OctoPrint Plugin — GCode layer fingerprinting for print recovery."""
 
 from __future__ import annotations
 
@@ -59,20 +29,13 @@ class InfillCodePlugin(
     octoprint.plugin.ProgressPlugin,
 ):
 
-    # ── Lifecycle ─────────────────────────────────────────────────────────────
-
     def initialize(self) -> None:
-        # Tracks the last progress bucket at which a mid-print check ran,
-        # so we fire at most once per N-% interval.
+        self._state_lock = threading.RLock()
         self._last_fingerprint_check_pct: Optional[int] = None
-        # Rolling history of mid-print fingerprint checks (True=pass, False=fail).
-        # Capped at _HEALTH_WINDOW entries so old results don't drag the score forever.
         self._fingerprint_history: List[bool] = []
         self._consecutive_failures: int = 0
 
     _HEALTH_WINDOW = 20   # how many recent checks to score
-
-    # ── Settings ─────────────────────────────────────────────────────────────
 
     def get_settings_defaults(self) -> Dict[str, Any]:
         return {
@@ -91,17 +54,15 @@ class InfillCodePlugin(
             # Resume GCode settings
             "z_hop_mm": 2.0,                 # nozzle lift during resume init
             "prime_length_mm": 20.0,         # purge extrusion before resuming
+            "park_x": -1.0,                  # park X during heat-up (-1 = disabled)
+            "park_y": -1.0,                  # park Y during heat-up (-1 = disabled)
         }
-
-    # ── Assets ────────────────────────────────────────────────────────────────
 
     def get_assets(self) -> Dict[str, List[str]]:
         return {
             "js":  ["static/infillcode.js"],
             "css": ["static/infillcode.css"],
         }
-
-    # ── Templates ─────────────────────────────────────────────────────────────
 
     def get_template_configs(self) -> List[Dict[str, Any]]:
         return [
@@ -118,16 +79,50 @@ class InfillCodePlugin(
             },
         ]
 
-    # ── StartupPlugin ─────────────────────────────────────────────────────────
-
     def on_after_startup(self) -> None:
-        """Schedule a delayed bed-fingerprint scan after OctoPrint starts."""
+        """Validate configuration and start optional background tasks."""
+        # Validate configuration
+        validation_errors = self._validate_configuration()
+        if validation_errors:
+            for error in validation_errors:
+                self._logger.warning("InfillCode configuration issue: %s", error)
+            self._send_message("config_validation_warning", {
+                "errors": validation_errors,
+            })
+        
+        # Start auto-scan if configured
         if not self._settings.get(["auto_scan_on_startup"]):
             return
-        # Delay 15 s so the webcam has time to initialise.
         t = threading.Timer(15.0, self._startup_bed_scan)
         t.daemon = True
         t.start()
+
+    def _validate_configuration(self) -> list[str]:
+        """
+        Validate plugin configuration at startup.
+        
+        Returns:
+            List of configuration issues (empty if all valid)
+        """
+        errors = []
+        
+        # Check database path if auto_process_aw_gcode is enabled
+        if self._settings.get(["auto_process_aw_gcode"]):
+            db_path = self._settings.get(["db_path"])
+            if not db_path:
+                errors.append("Database path not configured but auto_process_aw_gcode is enabled")
+            elif not os.path.isfile(db_path):
+                errors.append(f"Database file not found at {db_path}")
+        
+        # Check snapshot URL if auto_scan_on_startup or fingerprint checks are enabled
+        if self._settings.get(["auto_scan_on_startup"]) or self._settings.get(["fingerprint_check_interval"]):
+            snapshot_url = self._settings.get(["snapshot_url"])
+            if not snapshot_url:
+                errors.append("Webcam snapshot URL not configured but fingerprint checks are enabled")
+            elif not (snapshot_url.startswith("http://") or snapshot_url.startswith("https://")):
+                errors.append(f"Invalid snapshot URL (must be http:// or https://): {snapshot_url}")
+        
+        return errors
 
     def _startup_bed_scan(self) -> None:
         try:
@@ -166,19 +161,16 @@ class InfillCodePlugin(
 
         self._send_message("startup_scan_result", info)
 
-    # ── ProgressPlugin ────────────────────────────────────────────────────────
-
     def on_print_progress(self, storage: str, path: str, progress: int) -> None:
         interval = int(self._settings.get(["fingerprint_check_interval"]) or 0)
         if interval <= 0 or progress <= 0:
             return
 
-        # Fire at the first multiple of `interval` we haven't checked yet.
         bucket = (progress // interval) * interval
-        if bucket == 0 or bucket == self._last_fingerprint_check_pct:
-            return
-
-        self._last_fingerprint_check_pct = bucket
+        with self._state_lock:
+            if bucket == 0 or bucket == self._last_fingerprint_check_pct:
+                return
+            self._last_fingerprint_check_pct = bucket
         threading.Thread(
             target=self._mid_print_fingerprint_check,
             args=(progress,),
@@ -229,29 +221,31 @@ class InfillCodePlugin(
             "health_history": list(self._fingerprint_history),
         })
 
-    # ── Health score helpers ──────────────────────────────────────────────────
-
     def _record_check_result(self, passed: bool) -> None:
-        self._fingerprint_history.append(passed)
-        if len(self._fingerprint_history) > self._HEALTH_WINDOW:
-            self._fingerprint_history.pop(0)
-        if passed:
-            self._consecutive_failures = 0
-        else:
-            self._consecutive_failures += 1
+        with self._state_lock:
+            self._fingerprint_history.append(passed)
+            if len(self._fingerprint_history) > self._HEALTH_WINDOW:
+                self._fingerprint_history.pop(0)
+            if passed:
+                self._consecutive_failures = 0
+            else:
+                self._consecutive_failures += 1
 
     def _health_score(self) -> Optional[int]:
-        if not self._fingerprint_history:
-            return None
-        return round(100 * sum(self._fingerprint_history) / len(self._fingerprint_history))
+        with self._state_lock:
+            if not self._fingerprint_history:
+                return None
+            return round(100 * sum(self._fingerprint_history) / len(self._fingerprint_history))
 
     def _maybe_auto_pause(self, progress: int) -> None:
-        threshold = int(self._settings.get(["auto_pause_consecutive_failures"]) or 0)
-        if threshold <= 0 or self._consecutive_failures < threshold:
-            return
+        with self._state_lock:
+            threshold = int(self._settings.get(["auto_pause_consecutive_failures"]) or 0)
+            if threshold <= 0 or self._consecutive_failures < threshold:
+                return
+            consecutive_failures = self._consecutive_failures
         self._logger.warning(
             "InfillCode: %d consecutive fingerprint failures at %d%% — pausing print.",
-            self._consecutive_failures, progress,
+            consecutive_failures, progress,
         )
         try:
             self._printer.pause_print()
@@ -259,18 +253,16 @@ class InfillCodePlugin(
             self._logger.error("InfillCode: could not pause print: %s", exc)
         self._send_message("auto_paused", {
             "progress":            progress,
-            "consecutive_failures": self._consecutive_failures,
+            "consecutive_failures": consecutive_failures,
         })
 
     def _reset_print_state(self) -> None:
-        self._last_fingerprint_check_pct = None
-        self._fingerprint_history = []
-        self._consecutive_failures = 0
-
-    # ── Events ────────────────────────────────────────────────────────────────
+        with self._state_lock:
+            self._last_fingerprint_check_pct = None
+            self._fingerprint_history = []
+            self._consecutive_failures = 0
 
     def on_event(self, event: str, payload: Dict[str, Any]) -> None:
-        # Post-print analysis
         if event in {"PrintFailed", "PrintDone", "PrintCancelled"}:
             threading.Thread(
                 target=self._analyse_snapshot,
@@ -282,7 +274,6 @@ class InfillCodePlugin(
         if event == "PrintStarted":
             self._reset_print_state()
 
-        # Auto-process .aw.gcode uploads
         if event == "FileAdded":
             name = payload.get("name", "")
             if name.endswith(".aw.gcode") and self._settings.get(["auto_process_aw_gcode"]):
@@ -291,8 +282,6 @@ class InfillCodePlugin(
                     args=(payload,),
                     daemon=True,
                 ).start()
-
-    # ── .aw.gcode auto-processing ─────────────────────────────────────────────
 
     def _auto_process_aw_gcode(self, payload: Dict[str, Any]) -> None:
         try:
@@ -354,7 +343,6 @@ class InfillCodePlugin(
             return
         conn.close()
 
-        # Output filename: strip ".aw" from "model.aw.gcode" → "model.gcode"
         out_name = name[: -len(".aw.gcode")] + ".gcode"
         out_dir  = os.path.dirname(full_path)
         out_path = os.path.join(out_dir, out_name)
@@ -379,18 +367,9 @@ class InfillCodePlugin(
             "nominal_spacing_mm": result.nominal_spacing_mm,
         })
 
-    # ── Shared vision helper ──────────────────────────────────────────────────
-
     def _scan_and_decode_fingerprint(
         self,
     ) -> Optional[Tuple[Dict[str, Any], Any]]:
-        """
-        Take a webcam snapshot, run the vision + decode pipeline, and look up
-        the result in the DB.
-
-        Returns ``(db_row_dict, decoded_result)`` on success, ``None`` on any
-        failure (no fingerprint, vision error, DB miss, missing config, etc.).
-        """
         db_path      = self._settings.get(["db_path"])
         snapshot_url = self._settings.get(["snapshot_url"])
         nominal      = float(self._settings.get(["nominal_spacing_mm"]) or 0)
@@ -431,8 +410,6 @@ class InfillCodePlugin(
             return None
 
         return dict(row), result
-
-    # ── Post-print snapshot analysis ──────────────────────────────────────────
 
     def _analyse_snapshot(self, event: str, payload: Dict[str, Any]) -> None:
         try:
@@ -515,20 +492,11 @@ class InfillCodePlugin(
 
         self._send_message("layer_identified", layer_info)
 
-    # ── Resume GCode generation ───────────────────────────────────────────────
-
     def _build_resume_file(
         self,
         db_row,
         event_payload: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
-        """
-        Find the original GCode file, generate a resume file starting from
-        db_row["layer_idx"] + 1, and save it to OctoPrint's uploads folder.
-
-        Returns a dict with resume metadata to include in the plugin message,
-        or None on failure.
-        """
         try:
             from core.resume import build_resume_gcode, ResumeError
         except ImportError as exc:
@@ -537,6 +505,8 @@ class InfillCodePlugin(
 
         z_hop      = float(self._settings.get(["z_hop_mm"]) or 2.0)
         prime_len  = float(self._settings.get(["prime_length_mm"]) or 20.0)
+        park_x     = float(self._settings.get(["park_x"]) or -1.0)
+        park_y     = float(self._settings.get(["park_y"]) or -1.0)
 
         original_path = self._locate_gcode_file(db_row["filename"], event_payload)
         if original_path is None:
@@ -559,6 +529,8 @@ class InfillCodePlugin(
                 original_filename=db_row["filename"],
                 z_hop_mm=z_hop,
                 prime_length_mm=prime_len,
+                park_x=park_x if park_x >= 0 else None,
+                park_y=park_y if park_y >= 0 else None,
             )
         except Exception as exc:
             self._logger.error("InfillCode: resume build failed: %s", exc)
@@ -578,7 +550,6 @@ class InfillCodePlugin(
             resume_result.layers_remaining,
         )
 
-        # Build the OctoPrint-relative path for one-click resume
         resume_rel_path = None
         try:
             uploads_root = self._file_manager.path_on_disk("local", "")
@@ -600,14 +571,6 @@ class InfillCodePlugin(
         filename: str,
         event_payload: Dict[str, Any],
     ) -> Optional[str]:
-        """
-        Try to find the on-disk path of the GCode file.
-
-        Strategy (in order):
-          1. event_payload["path"] — set by OctoPrint for PrintFailed events.
-          2. Scan OctoPrint's uploads directory for a file matching *filename*.
-          3. Check db_path's sibling directory (companion DB was saved there).
-        """
         event_path = event_payload.get("path") or event_payload.get("file", {}).get("path")
         if event_path:
             uploads = self._file_manager.path_on_disk("local", event_path)
@@ -637,10 +600,6 @@ class InfillCodePlugin(
         suggested_filename: str,
         original_path: str,
     ) -> Optional[str]:
-        """
-        Write resume_gcode to disk.  Tries the same directory as the original
-        file; falls back to OctoPrint's uploads root.
-        """
         for candidate_dir in [
             os.path.dirname(original_path),
             self._file_manager.path_on_disk("local", ""),
@@ -655,15 +614,11 @@ class InfillCodePlugin(
                 continue
         return None
 
-    # ── SimpleApiPlugin ───────────────────────────────────────────────────────
-
     def get_api_commands(self) -> Dict[str, List[str]]:
         return {"status": []}
 
     def on_api_command(self, command: str, data: Dict[str, Any]):
         return {"status": "ok"}
-
-    # ── Internal ──────────────────────────────────────────────────────────────
 
     def _send_message(self, msg_type: str, payload: Dict[str, Any]) -> None:
         self._plugin_manager.send_plugin_message(
@@ -672,11 +627,12 @@ class InfillCodePlugin(
         )
 
 
-__plugin_name__          = "InfillCode"
-__plugin_version__       = "0.2.0"
-__plugin_pythoncompat__  = ">=3.7"
-__plugin_description__   = "GCode layer fingerprinting via infill line spacing modulation — auto-resume, bed scanning, and mid-print health monitoring."
-__plugin_author__        = "Dr Steve Mander"
-__plugin_url__           = "https://github.com/st7ma784/infillcoder"
-__plugin_license__       = "MIT"
+__plugin_name__           = "InfillCode"
+__plugin_version__        = "0.2.0"
+__plugin_pythoncompat__   = ">=3.7"
+__plugin_description__    = "GCode layer fingerprinting via infill line spacing modulation — auto-resume, bed scanning, and mid-print health monitoring."
+__plugin_author__         = "Dr Steve Mander"
+__plugin_url__            = "https://github.com/st7ma784/infillcoder"
+__plugin_license__        = "MIT"
+__plugin_hooks__          = {}
 __plugin_implementation__ = InfillCodePlugin()
